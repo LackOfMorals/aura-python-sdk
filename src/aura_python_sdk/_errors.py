@@ -47,6 +47,10 @@ class AuraResponseError(AuraError):
     """The API response could not be used: too large, not valid JSON, or an unexpected shape."""
 
 
+class MetricNotFoundError(AuraError, LookupError):
+    """No Prometheus metric matched the requested name and label filters."""
+
+
 @dataclass(frozen=True, slots=True)
 class ErrorDetail:
     """One entry from the ``errors`` array of an Aura API error response."""

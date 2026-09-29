@@ -215,6 +215,18 @@ parser accepts the spec's `{"errors": [...]}`, the middleware `{"error": "..."}`
 - **Coverage guard**: `test_every_spec_operation_has_a_client_method` fails if the spec gains an
   operation that no SDK method covers.
 
+### 2.9 Decisions made in phase 6
+
+- **No `prometheus_client`.** It normalises counter names (`foo` becomes `foo_total`) and
+  converts timestamps to seconds, so its keys wouldn't match the Go SDK's. A roughly 150-line
+  stdlib parser gives exactly the same output as Go's `expfmt`, checked with a Go program on the
+  same input. The `[prometheus]` extra is gone, so httpx is the only runtime dependency.
+- **Metrics URL guard.** The Aura bearer token is sent to the metrics URL, so it must be
+  `https://*.neo4j.io` unless `allow_insecure_base_url=True`. Go sends the token to any URL.
+- **Missing metrics are `None`, not `0`.** `InstanceHealth` fields are `None` when the endpoint
+  didn't report a metric, and threshold checks skip them. The status logic and messages match Go.
+- **`get_metric_value`** raises `MetricNotFoundError`, which is also a `LookupError`.
+
 ## 3. Package layout
 
 ```
@@ -237,7 +249,7 @@ src/aura_python_sdk/
       _types.py                # HttpRequest, HttpResponse, HttpTransport Protocol
       _httpx.py                # HttpxTransport, the only httpx import
     metrics/
-      _parser.py               # the only prometheus_client import (optional extra)
+      _parser.py               # stdlib Prometheus text-format parser (matches Go expfmt)
 tests/
   unit/                        # FakeTransport, no network
   transport/                   # HttpxTransport against httpx.MockTransport
@@ -250,7 +262,6 @@ examples/                      # ports of go examples/v1/*
 | Dependency | Purpose | Wrapped in |
 |---|---|---|
 | `httpx` | HTTP | `_internal/http/_httpx.py` |
-| `prometheus_client` (optional extra `[prometheus]`) | Parse the Prometheus text format | `_internal/metrics/_parser.py` |
 
 Dev tooling: `uv`, `ruff` (lint and format), `mypy --strict`, `pytest`, `pytest-cov`. No `respx`:
 `httpx.MockTransport` plus our own fake transport are enough.
@@ -265,14 +276,14 @@ Dev tooling: `uv`, `ruff` (lint and format), `mypy --strict`, `pytest`, `pytest-
    example payloads.
 4. **Services at Go parity**: tenants, instances, snapshots, `cmek.list`, graph_analytics.
 5. **Spec gap-fill**: instance sizing and upgrade, CMEK get/create/delete, list filters, extra PATCH fields.
-6. **Prometheus**: the optional extra plus the health assessment.
+6. **Prometheus**: a stdlib metrics parser plus the health assessment.
 7. **Docs and release**: README, the ported examples, CHANGELOG, opt-in integration tests, PyPI publish workflow.
 8. *(If chosen)* **Async**: `AsyncAuraClient` over an `AsyncHttpTransport`, reusing request
    building and parsing. The layering keeps this additive.
 
 ## 6. Enforcing "wrap every import"
 
-A unit test walks `src/` with `ast` and fails if `httpx` or `prometheus_client` is imported anywhere
+A unit test walks `src/` with `ast` and fails if `httpx` (or any unregistered dependency) is imported anywhere
 except its designated module. It also checks that no public symbol's annotations reference those
 packages.
 

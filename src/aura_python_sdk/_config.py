@@ -28,6 +28,7 @@ class ClientConfig:
     client_id: str
     client_secret: str = field(repr=False)
     base_url: str
+    allow_insecure_base_url: bool
     timeout: float
     max_retries: int
     max_response_size: int
@@ -57,6 +58,7 @@ def build_config(
         client_id=client_id,
         client_secret=client_secret,
         base_url=_validate_base_url(base_url, allow_insecure=allow_insecure_base_url),
+        allow_insecure_base_url=bool(allow_insecure_base_url),
         timeout=_validate_timeout(timeout),
         max_retries=_validate_non_negative_int("max retries", max_retries),
         max_response_size=_validate_positive_int("max response size", max_response_size),

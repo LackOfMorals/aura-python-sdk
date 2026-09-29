@@ -28,6 +28,7 @@ from aura_python_sdk.services import (
     CMEKService,
     GDSSessionService,
     InstanceService,
+    PrometheusService,
     SnapshotService,
     TenantService,
 )
@@ -48,7 +49,7 @@ class AuraClient:
                 print(instance.id, instance.name)
 
     Services, mirroring the Go SDK: ``tenants``, ``instances``, ``snapshots``, ``cmek`` and
-    ``graph_analytics``.
+    ``graph_analytics``, plus ``prometheus`` for metrics endpoints.
 
     Every option is keyword-only. Invalid options raise :class:`AuraConfigurationError`.
 
@@ -56,8 +57,9 @@ class AuraClient:
         client_id: Aura API client ID.
         client_secret: Aura API client secret.
         base_url: API base URL. It must use HTTPS unless ``allow_insecure_base_url`` is set.
-        allow_insecure_base_url: Allow an ``http://`` base URL. Only for local test servers,
-            because credentials would be sent in cleartext.
+        allow_insecure_base_url: Allow an ``http://`` base URL, and Prometheus URLs outside
+            ``https://*.neo4j.io``. Only for local test servers, because credentials would be sent
+            in cleartext.
         timeout: Seconds allowed for each API call, covering the token fetch, retries and backoff.
         max_retries: How many times to retry after a network failure. Responses with an HTTP
             status are never retried.
@@ -137,6 +139,11 @@ class AuraClient:
         self.cmek = CMEKService(self._api, self._logger.getChild("cmek"))
         self.graph_analytics = GDSSessionService(
             self._api, self._logger.getChild("graph_analytics")
+        )
+        self.prometheus = PrometheusService(
+            self._api,
+            self._logger.getChild("prometheus"),
+            allow_untrusted_urls=self._config.allow_insecure_base_url,
         )
 
         self._logger.debug(
