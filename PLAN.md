@@ -268,6 +268,8 @@ Dev tooling: `uv`, `ruff` (lint and format), `mypy --strict`, `pytest`, `pytest-
 
 ## 5. Phases
 
+**Status:** phases 1–7 are done. Phase 8 (async) is not started.
+
 1. **Scaffold**: pyproject, uv, ruff, mypy, pytest config, CI workflow, and the import-boundary test.
 2. **Core**: config/options, errors, `HttpTransport` + `HttpxTransport` (retries, size cap),
    `TokenManager`, `RequestService`, and `AuraClient` with no services yet. Unit-tested to Go's

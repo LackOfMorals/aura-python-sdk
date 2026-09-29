@@ -61,11 +61,11 @@ ignore = []
 [tool.mypy]
 python_version = "3.11"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "examples"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--strict-markers", "--import-mode=importlib"]
+addopts = ["--strict-markers", "--import-mode=importlib", "-m", "not integration"]
 markers = ["integration: talks to a real Aura account; needs AURA_CLIENT_ID / AURA_CLIENT_SECRET"]
 
 [tool.coverage.run]
