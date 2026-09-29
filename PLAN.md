@@ -277,9 +277,11 @@ packages.
 ## 8. Spec and Go discrepancies to resolve during implementation
 
 - **Query parameter name**: the spec names the list-filter parameter `tenantId`, but Go sends
-  `tenant_id` (CMEK list). Check against the live API.
+  `tenant_id` (CMEK list). *Resolved: follow the spec. `tenantId` is used for
+  every list filter (defined once in `services/cmek.py`).*
 - **Overwrite response**: Go models it as `{"data": "<job id string>"}`, but the spec says
-  `Instance`. Parse tolerantly and confirm.
+  `Instance`. The Go tests only use mocks. *Resolved: follow the spec. `overwrite_from_instance`
+  and `overwrite_from_snapshot` return `Instance`.*
 - **GDS `ttl` type**: the spec says `integer` in the session details but `string` in the create
   request. Go uses string throughout.
 - **GDS create response**: the spec has an odd `data: {type: object, items: ...}` shape. Treat it as

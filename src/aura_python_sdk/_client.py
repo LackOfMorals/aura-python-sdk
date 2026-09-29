@@ -24,6 +24,13 @@ from aura_python_sdk._internal._request import RequestService
 from aura_python_sdk._internal.http._httpx import HttpxTransport
 from aura_python_sdk._internal.http._service import HttpService
 from aura_python_sdk._transport import HttpTransport
+from aura_python_sdk.services import (
+    CMEKService,
+    GDSSessionService,
+    InstanceService,
+    SnapshotService,
+    TenantService,
+)
 
 ENV_CLIENT_ID = "AURA_CLIENT_ID"
 ENV_CLIENT_SECRET = "AURA_CLIENT_SECRET"  # noqa: S105 - environment variable name, not a secret
@@ -37,7 +44,11 @@ class AuraClient:
     Example::
 
         with AuraClient(client_id="...", client_secret="...") as client:
-            ...
+            for instance in client.instances.list():
+                print(instance.id, instance.name)
+
+    Services, mirroring the Go SDK: ``tenants``, ``instances``, ``snapshots``, ``cmek`` and
+    ``graph_analytics``.
 
     Every option is keyword-only. Invalid options raise :class:`AuraConfigurationError`.
 
@@ -118,6 +129,14 @@ class AuraClient:
             default_headers=self._config.default_headers,
             timeout=self._config.timeout,
             logger=self._logger.getChild("api"),
+        )
+
+        self.tenants = TenantService(self._api, self._logger.getChild("tenants"))
+        self.instances = InstanceService(self._api, self._logger.getChild("instances"))
+        self.snapshots = SnapshotService(self._api, self._logger.getChild("snapshots"))
+        self.cmek = CMEKService(self._api, self._logger.getChild("cmek"))
+        self.graph_analytics = GDSSessionService(
+            self._api, self._logger.getChild("graph_analytics")
         )
 
         self._logger.debug(
