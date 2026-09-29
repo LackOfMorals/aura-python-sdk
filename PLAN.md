@@ -288,3 +288,9 @@ packages.
   not its schema. Go sends them, so we keep them.
 - **Instance status `stopped` / `available`**: present in Go but not in the spec enum. Keep them for
   parity; tolerant parsing makes this harmless.
+- **Snapshot ID format**: resolved. Snapshot IDs are UUIDs, and the spec's list example
+  (`snapshot_id: '2023-01-20T13:44:42Z'`) is wrong. We keep Go's UUID validation.
+- **Required fields on responses**: models follow the spec's `required` lists, with two
+  exceptions. Instance `storage` is optional because it isn't returned for Free instances. GDS
+  session `status` is optional because the spec's 202 example returns `null`. A missing required
+  field raises `AuraResponseError` and names the field.
