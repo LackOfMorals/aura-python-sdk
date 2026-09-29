@@ -3,28 +3,34 @@
 from __future__ import annotations
 
 import builtins
+from collections.abc import Sequence
 
 from aura_python_sdk import _validation as validate
 from aura_python_sdk._errors import AuraValidationError
 from aura_python_sdk._internal._request import build_path
 from aura_python_sdk._internal._serde import parse_data, parse_data_list, to_json
+from aura_python_sdk.models._common import InstanceType
 from aura_python_sdk.models.instances import (
     CDCEnrichmentMode,
     CreatedInstance,
     Instance,
     InstanceConfig,
+    InstanceSizeEstimate,
     InstanceSummary,
 )
-from aura_python_sdk.services._base import Service
+from aura_python_sdk.services._base import TENANT_ID_PARAM, Service
 
 
 class InstanceService(Service):
     """AuraDB and AuraDS instances."""
 
-    def list(self) -> builtins.list[InstanceSummary]:
-        """Every instance the credentials can access."""
-        self._logger.debug("listing instances")
-        instances = parse_data_list(InstanceSummary, self._api.get("instances").json())
+    def list(self, tenant_id: str | None = None) -> builtins.list[InstanceSummary]:
+        """Every instance the credentials can access, optionally only those in one tenant."""
+        if tenant_id is not None:
+            tenant_id = validate.tenant_id(tenant_id)
+        self._logger.debug("listing instances", extra={"tenant_id": tenant_id})
+        response = self._api.get("instances", params={TENANT_ID_PARAM: tenant_id})
+        instances = parse_data_list(InstanceSummary, response.json())
         self._logger.debug("instances listed", extra={"count": len(instances)})
         return instances
 
@@ -84,12 +90,17 @@ class InstanceService(Service):
         *,
         name: str | None = None,
         memory: str | None = None,
+        storage: str | None = None,
+        vector_optimized: bool | None = None,
+        graph_analytics_plugin: bool | None = None,
         cdc_enrichment_mode: CDCEnrichmentMode | str | None = None,
         secondaries_count: int | None = None,
     ) -> Instance:
         """Rename, resize or reconfigure an instance. Only the arguments given are changed.
 
         The update is asynchronous, and the instance stays available throughout.
+        ``secondaries_count`` applies only to Virtual Dedicated Cloud, and
+        ``cdc_enrichment_mode`` only to Virtual Dedicated Cloud and Business Critical.
         """
         instance_id = validate.instance_id(instance_id)
         changes: dict[str, object] = {}
@@ -97,6 +108,14 @@ class InstanceService(Service):
             changes["name"] = validate.instance_name(name)
         if memory is not None:
             changes["memory"] = validate.require_non_empty("memory", memory)
+        if storage is not None:
+            changes["storage"] = validate.require_non_empty("storage", storage)
+        if vector_optimized is not None:
+            changes["vector_optimized"] = validate.boolean("vector optimized", vector_optimized)
+        if graph_analytics_plugin is not None:
+            changes["graph_analytics_plugin"] = validate.boolean(
+                "graph analytics plugin", graph_analytics_plugin
+            )
         if cdc_enrichment_mode is not None:
             changes["cdc_enrichment_mode"] = validate.require_non_empty(
                 "CDC enrichment mode", cdc_enrichment_mode
@@ -114,6 +133,56 @@ class InstanceService(Service):
         response = self._api.patch(build_path("instances", instance_id), json_body=to_json(changes))
         instance = parse_data(Instance, response.json())
         self._logger.info("instance update started", extra={"instance_id": instance_id})
+        return instance
+
+    def estimate_size(
+        self,
+        *,
+        node_count: int,
+        relationship_count: int,
+        instance_type: InstanceType | str | None = None,
+        algorithm_categories: Sequence[str] | None = None,
+    ) -> InstanceSizeEstimate:
+        """Estimate the instance size needed for a graph.
+
+        Supported for ``enterprise-ds`` and ``professional-ds``. Pass the recommended size as
+        ``memory`` when creating the instance.
+        """
+        body: dict[str, object] = {
+            "node_count": validate.non_negative_int("node count", node_count),
+            "relationship_count": validate.non_negative_int(
+                "relationship count", relationship_count
+            ),
+        }
+        if instance_type is not None:
+            body["instance_type"] = validate.require_non_empty("instance type", instance_type)
+        if algorithm_categories is not None:
+            body["algorithm_categories"] = validate.string_list(
+                "algorithm categories", algorithm_categories
+            )
+        self._logger.debug("estimating instance size")
+        response = self._api.post("instances/sizing", json_body=to_json(body))
+        return parse_data(InstanceSizeEstimate, response.json())
+
+    def upgrade(
+        self, instance_id: str, *, memory: str | None = None, storage: str | None = None
+    ) -> Instance:
+        """Upgrade an AuraDB Professional instance to Business Critical.
+
+        Pass both ``memory`` and ``storage`` to resize as part of the upgrade, or neither to keep
+        the current size. Not available for Marketplace projects or trial instances.
+        """
+        instance_id = validate.instance_id(instance_id)
+        if (memory is None) != (storage is None):
+            raise AuraValidationError("upgrade requires both memory and storage, or neither")
+        body: dict[str, object] = {}
+        if memory is not None and storage is not None:
+            body["memory"] = validate.require_non_empty("memory", memory)
+            body["storage"] = validate.require_non_empty("storage", storage)
+        self._logger.debug("upgrading instance", extra={"instance_id": instance_id})
+        response = self._api.post(build_path("instances", instance_id, "upgrade"), json_body=body)
+        instance = parse_data(Instance, response.json())
+        self._logger.info("instance upgrade started", extra={"instance_id": instance_id})
         return instance
 
     def delete(self, instance_id: str) -> Instance:

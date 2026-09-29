@@ -15,7 +15,12 @@ from aura_python_sdk.models.graph_analytics import (
     GDSSessionConfig,
     GDSSessionSizeEstimate,
 )
-from aura_python_sdk.services._base import Service
+from aura_python_sdk.services._base import (
+    INSTANCE_ID_PARAM,
+    ORGANIZATION_ID_PARAM,
+    TENANT_ID_PARAM,
+    Service,
+)
 
 _SESSIONS = "graph-analytics/sessions"
 
@@ -23,10 +28,23 @@ _SESSIONS = "graph-analytics/sessions"
 class GDSSessionService(Service):
     """Graph Analytics (GDS) sessions."""
 
-    def list(self) -> builtins.list[GDSSession]:
-        """Every session the credentials can access."""
+    def list(
+        self,
+        *,
+        tenant_id: str | None = None,
+        instance_id: str | None = None,
+        organization_id: str | None = None,
+    ) -> builtins.list[GDSSession]:
+        """Every session the credentials can access, optionally filtered."""
+        params = {
+            TENANT_ID_PARAM: None if tenant_id is None else validate.tenant_id(tenant_id),
+            INSTANCE_ID_PARAM: None if instance_id is None else validate.instance_id(instance_id),
+            ORGANIZATION_ID_PARAM: None
+            if organization_id is None
+            else validate.require_non_empty("organization ID", organization_id),
+        }
         self._logger.debug("listing GDS sessions")
-        sessions = parse_data_list(GDSSession, self._api.get(_SESSIONS).json())
+        sessions = parse_data_list(GDSSession, self._api.get(_SESSIONS, params=params).json())
         self._logger.debug("GDS sessions listed", extra={"count": len(sessions)})
         return sessions
 
@@ -56,12 +74,9 @@ class GDSSessionService(Service):
             if value is not None:
                 body[key] = validate.non_negative_int(key.replace("_", " "), value)
         if algorithm_categories is not None:
-            if isinstance(algorithm_categories, str):
-                raise AuraValidationError("algorithm categories must be a sequence of strings")
-            body["algorithm_categories"] = [
-                validate.require_non_empty("algorithm category", category)
-                for category in algorithm_categories
-            ]
+            body["algorithm_categories"] = validate.string_list(
+                "algorithm categories", algorithm_categories
+            )
 
         self._logger.debug("estimating GDS session size")
         response = self._api.post(f"{_SESSIONS}/sizing", json_body=body)

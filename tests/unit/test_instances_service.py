@@ -271,3 +271,143 @@ def test_invalid_ids_send_nothing(api: Api, call: Any) -> None:
     with pytest.raises(AuraValidationError):
         call(api.client.instances)
     api.assert_no_request()
+
+
+# --- Phase 5: spec coverage beyond the Go SDK ---
+
+
+def test_list_filtered_by_tenant(api: Api) -> None:
+    api.reply(200, {"data": []})
+    api.client.instances.list(TENANT_ID)
+    assert api.request.url == f"{BASE}/instances?tenantId={TENANT_ID}"
+
+
+def test_list_invalid_tenant_sends_nothing(api: Api) -> None:
+    with pytest.raises(AuraValidationError, match="tenant ID"):
+        api.client.instances.list("bad")
+    api.assert_no_request()
+
+
+def test_update_new_spec_fields(api: Api) -> None:
+    api.reply(202, {"data": INSTANCE})
+    api.client.instances.update(
+        INSTANCE_ID, storage="32GB", vector_optimized=True, graph_analytics_plugin=False
+    )
+    assert api.body == {
+        "storage": "32GB",
+        "vector_optimized": True,
+        "graph_analytics_plugin": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"storage": ""}, "storage must not be empty"),
+        ({"vector_optimized": "yes"}, "vector optimized must be True or False"),
+        ({"graph_analytics_plugin": 1}, "graph analytics plugin must be True or False"),
+        ({"name": " padded"}, "leading or trailing whitespace"),
+    ],
+)
+def test_update_new_field_validation(api: Api, kwargs: dict[str, Any], message: str) -> None:
+    with pytest.raises(AuraValidationError, match=message):
+        api.client.instances.update(INSTANCE_ID, **kwargs)
+    api.assert_no_request()
+
+
+def test_estimate_size(api: Api) -> None:
+    api.reply(
+        200,
+        {
+            "data": {
+                "did_exceed_maximum": False,
+                "min_required_memory": "14GB",
+                "recommended_size": "16GB",
+            }
+        },
+    )
+    estimate = api.client.instances.estimate_size(
+        node_count=1_000_000,
+        relationship_count=5_000_000,
+        instance_type=InstanceType.PROFESSIONAL_DS,
+        algorithm_categories=["pathfinding", "community-detection"],
+    )
+    assert estimate.recommended_size == "16GB"
+    assert estimate.did_exceed_maximum is False
+    assert (api.request.method, api.request.url) == ("POST", f"{BASE}/instances/sizing")
+    assert api.body == {
+        "node_count": 1_000_000,
+        "relationship_count": 5_000_000,
+        "instance_type": "professional-ds",
+        "algorithm_categories": ["pathfinding", "community-detection"],
+    }
+
+
+def test_estimate_size_minimal(api: Api) -> None:
+    api.reply(
+        200,
+        {
+            "data": {
+                "did_exceed_maximum": True,
+                "min_required_memory": "1TB",
+                "recommended_size": "1TB",
+            }
+        },
+    )
+    api.client.instances.estimate_size(node_count=1, relationship_count=2)
+    assert api.body == {"node_count": 1, "relationship_count": 2}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"node_count": -1, "relationship_count": 0}, "node count"),
+        ({"node_count": 1, "relationship_count": None}, "relationship count"),
+        ({"node_count": 1, "relationship_count": 1, "instance_type": ""}, "instance type"),
+        (
+            {"node_count": 1, "relationship_count": 1, "algorithm_categories": "pathfinding"},
+            "sequence",
+        ),
+    ],
+)
+def test_estimate_size_validation(api: Api, kwargs: dict[str, Any], message: str) -> None:
+    with pytest.raises(AuraValidationError, match=message):
+        api.client.instances.estimate_size(**kwargs)
+    api.assert_no_request()
+
+
+def test_upgrade_keeping_size(api: Api) -> None:
+    api.reply(200, {"data": {**INSTANCE, "type": "business-critical"}})
+    instance = api.client.instances.upgrade(INSTANCE_ID)
+    assert instance.type is InstanceType.BUSINESS_CRITICAL
+    assert (api.request.method, api.request.url) == (
+        "POST",
+        f"{BASE}/instances/{INSTANCE_ID}/upgrade",
+    )
+    assert api.body == {}
+
+
+def test_upgrade_with_resize(api: Api) -> None:
+    api.reply(200, {"data": INSTANCE})
+    api.client.instances.upgrade(INSTANCE_ID, memory="16GB", storage="32GB")
+    assert api.body == {"memory": "16GB", "storage": "32GB"}
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"memory": "16GB"}, "both memory and storage"),
+        ({"storage": "32GB"}, "both memory and storage"),
+        ({"memory": "", "storage": "32GB"}, "memory must not be empty"),
+    ],
+)
+def test_upgrade_validation(api: Api, kwargs: dict[str, Any], message: str) -> None:
+    with pytest.raises(AuraValidationError, match=message):
+        api.client.instances.upgrade(INSTANCE_ID, **kwargs)
+    api.assert_no_request()
+
+
+def test_upgrade_invalid_id(api: Api) -> None:
+    with pytest.raises(AuraValidationError, match="instance ID"):
+        api.client.instances.upgrade("bad")
+    api.assert_no_request()

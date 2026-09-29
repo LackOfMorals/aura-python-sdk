@@ -114,3 +114,52 @@ def test_spec_example_parses(operation_id: str, status: str, example: Any) -> No
         assert all(isinstance(item, model) for item in parsed)
     else:
         assert isinstance(parse_data(model, example), model)
+
+
+# operationId -> "service.method" on AuraClient
+OPERATION_METHODS = {
+    "get-instances": "instances.list",
+    "post-instances": "instances.create",
+    "post-instances-sizing": "instances.estimate_size",
+    "get-instance-id": "instances.get",
+    "delete-instance-id": "instances.delete",
+    "patch-instance-id": "instances.update",
+    "post-overwrite-instance": "instances.overwrite_from_instance",
+    "post-pause-instance": "instances.pause",
+    "post-resume-instance": "instances.resume",
+    "post-upgrade-instance": "instances.upgrade",
+    "get-snapshots": "snapshots.list",
+    "post-snapshots": "snapshots.create",
+    "get-snapshot-snapshotid": "snapshots.get",
+    "post-restore-snapshot": "snapshots.restore",
+    "get-projects": "tenants.list",
+    "get-project-id": "tenants.get",
+    "get-project-metrics-integration-details": "tenants.get_metrics_integration",
+    "get-customer-managed-keys": "cmek.list",
+    "post-customer-managed-keys": "cmek.create",
+    "get-customer-managed-key-id": "cmek.get",
+    "delete-customer-managed-key-id": "cmek.delete",
+    "get-sessions": "graph_analytics.list",
+    "post-session": "graph_analytics.create",
+    "post-sessions-sizing": "graph_analytics.estimate_size",
+    "get-session": "graph_analytics.get",
+    "delete-session": "graph_analytics.delete",
+}
+
+
+def test_every_spec_operation_has_a_client_method() -> None:
+    from aura_python_sdk import AuraClient
+    from tests.fakes import FakeTransport
+
+    operation_ids = {
+        operation["operationId"]
+        for path_item in _load_spec()["paths"].values()
+        for method, operation in path_item.items()
+        if method in HTTP_METHODS
+    }
+    assert operation_ids == OPERATION_METHODS.keys()
+
+    client = AuraClient(client_id="id", client_secret="secret", transport=FakeTransport())
+    for dotted in OPERATION_METHODS.values():
+        service_name, method_name = dotted.split(".")
+        assert callable(getattr(getattr(client, service_name), method_name)), dotted

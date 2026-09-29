@@ -203,6 +203,18 @@ parser accepts the spec's `{"errors": [...]}`, the middleware `{"error": "..."}`
   keep their usual types. A lower-case `bearer` token type is accepted.
 - **Transport ownership.** `close()` closes only a transport the client created itself.
 
+### 2.8 Decisions made in phase 5
+
+- **Names**: instance and CMEK names must be 1–30 characters with no leading or trailing
+  whitespace, as the spec states. Go checks only length, and only on create.
+- **CMEK IDs**: `get` and `delete` only require a non-empty key ID, which is then path-encoded.
+  The spec doesn't say whether these IDs are UUIDs.
+- **`upgrade()`**: `memory` and `storage` must be given together or not at all, as the spec
+  requires. With neither, it sends `{}`.
+- **`cmek.delete()`** returns `None`, since the API responds 204 with no body.
+- **Coverage guard**: `test_every_spec_operation_has_a_client_method` fails if the spec gains an
+  operation that no SDK method covers.
+
 ## 3. Package layout
 
 ```

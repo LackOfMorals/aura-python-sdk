@@ -139,11 +139,35 @@ def test_estimate_size_minimal(api: Api) -> None:
         ),
         (
             {"node_count": 1, "relationship_count": 1, "algorithm_categories": [""]},
-            "algorithm category",
+            "algorithm categories entry",
         ),
     ],
 )
 def test_estimate_size_validation(api: Api, kwargs: dict[str, Any], message: str) -> None:
     with pytest.raises(AuraValidationError, match=message):
         api.client.graph_analytics.estimate_size(**kwargs)
+    api.assert_no_request()
+
+
+def test_list_with_filters(api: Api) -> None:
+    api.reply(200, {"data": []})
+    api.client.graph_analytics.list(
+        tenant_id=TENANT_ID, instance_id=INSTANCE_ID, organization_id="org-1"
+    )
+    assert api.request.url == (
+        f"{SESSIONS}?tenantId={TENANT_ID}&instanceId={INSTANCE_ID}&organizationId=org-1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"tenant_id": "bad"}, "tenant ID"),
+        ({"instance_id": "bad"}, "instance ID"),
+        ({"organization_id": ""}, "organization ID"),
+    ],
+)
+def test_list_filter_validation(api: Api, kwargs: dict[str, Any], message: str) -> None:
+    with pytest.raises(AuraValidationError, match=message):
+        api.client.graph_analytics.list(**kwargs)
     api.assert_no_request()
