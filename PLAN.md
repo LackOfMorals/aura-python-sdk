@@ -185,6 +185,24 @@ parser accepts the spec's `{"errors": [...]}`, the middleware `{"error": "..."}`
 - Logging goes to the stdlib `logging` module, at debug level for requests and info level for
   mutations. Credentials, tokens and passwords are never logged.
 
+### 2.7 Deliberate differences from Go (decided in phase 2)
+
+- **Retry safety.** Go retries every network error for every method. Here, if the request may have
+  reached the server (read timeout, connection reset), only idempotent methods (GET, PUT, DELETE,
+  HEAD, OPTIONS) are retried. This stops a `POST /instances` from being sent twice and creating a
+  duplicate billable instance. Errors that happen before anything is sent (connect errors, pool
+  timeouts) are retried for every method. Transports report which case applies through
+  `AuraConnectionError.request_sent`.
+- **One deadline per call.** `timeout` covers the token fetch, every attempt and every backoff,
+  matching Go's `context.WithTimeout` per method. A retry is skipped if its backoff would pass the
+  deadline.
+- **`max_retries=0` is allowed** and means a single attempt. Go requires at least 1.
+- **A 401 clears the cached token**, so the next call fetches a new one. The failed call is not
+  retried.
+- **Token endpoint errors.** Any 4xx from `/oauth/token` raises `AuthenticationError`; 429 and 5xx
+  keep their usual types. A lower-case `bearer` token type is accepted.
+- **Transport ownership.** `close()` closes only a transport the client created itself.
+
 ## 3. Package layout
 
 ```
