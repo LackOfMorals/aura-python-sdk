@@ -246,3 +246,27 @@ def _parse_retry_after(value: str | None) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, parsed.timestamp() - time.time())
+
+
+# Report the public import path in tracebacks and reprs: "aura_python_sdk.NotFoundError", not
+# "aura_python_sdk._errors.NotFoundError". Every class listed here is exported from the package.
+for _public in (
+    AuraError,
+    AuraConfigurationError,
+    AuraValidationError,
+    AuraConnectionError,
+    AuraTimeoutError,
+    AuraResponseError,
+    MetricNotFoundError,
+    ErrorDetail,
+    AuraAPIError,
+    BadRequestError,
+    AuthenticationError,
+    PermissionDeniedError,
+    NotFoundError,
+    ConflictError,
+    RateLimitError,
+    ServerError,
+):
+    _public.__module__ = "aura_python_sdk"
+del _public

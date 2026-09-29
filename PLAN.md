@@ -336,6 +336,10 @@ packages.
   parity; tolerant parsing makes this harmless.
 - **Snapshot ID format**: resolved. Snapshot IDs are UUIDs, and the spec's list example
   (`snapshot_id: '2023-01-20T13:44:42Z'`) is wrong. We keep Go's UUID validation.
+- **`connection_url` can be null**: the first live run showed that `GET /instances/{id}`
+  returns `connection_url: null` for some instances, although the spec marks it as required.
+  `Instance.connection_url` is now optional. Run the live tests again after spec updates, to
+  catch fields that are required in the spec but missing in practice.
 - **Required fields on responses**: models follow the spec's `required` lists, with two
   exceptions. Instance `storage` is optional because it isn't returned for Free instances. GDS
   session `status` is optional because the spec's 202 example returns `null`. A missing required

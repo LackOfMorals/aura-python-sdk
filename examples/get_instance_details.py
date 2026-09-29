@@ -30,7 +30,7 @@ def main() -> int:
     print(f"Tier:           {instance.type}")
     print(f"Memory:         {instance.memory}")
     print(f"Storage:        {instance.storage or 'n/a'}")
-    print(f"Connection URL: {instance.connection_url}")
+    print(f"Connection URL: {instance.connection_url or 'n/a'}")
     return 0
 
 

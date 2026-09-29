@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 
@@ -64,9 +64,20 @@ def test_snapshots_for_first_instance(client: aura.AuraClient) -> None:
         assert snapshot.instance_id == instances[0].id
 
 
-def test_cmek_and_sessions_list(client: aura.AuraClient) -> None:
-    assert isinstance(client.cmek.list(), list)
-    assert isinstance(client.graph_analytics.list(), list)
+def _skip_if_forbidden(call: Callable[[], object]) -> object:
+    """Run ``call``, but skip the test if these credentials lack permission for it."""
+    try:
+        return call()
+    except aura.PermissionDeniedError as err:
+        pytest.skip(f"credentials lack permission: {err.message}")
+
+
+def test_cmek_list(client: aura.AuraClient) -> None:
+    assert isinstance(_skip_if_forbidden(client.cmek.list), list)
+
+
+def test_sessions_list(client: aura.AuraClient) -> None:
+    assert isinstance(_skip_if_forbidden(client.graph_analytics.list), list)
 
 
 def test_unknown_instance_is_not_found(client: aura.AuraClient) -> None:

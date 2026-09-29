@@ -108,3 +108,19 @@ def test_all_models_exported_at_top_level() -> None:
     for name in models.__all__:
         assert getattr(aura, name) is getattr(models, name)
         assert name in aura.__all__
+
+
+@pytest.mark.parametrize("payload", [{"connection_url": None}, {}])
+def test_instance_connection_url_may_be_null_or_missing(payload: dict[str, object]) -> None:
+    # The spec marks it required, but the live API returns null for some instances.
+    base = {
+        "id": "abcd1234",
+        "name": "x",
+        "status": "creating",
+        "tenant_id": "t",
+        "cloud_provider": "gcp",
+        "region": "europe-west1",
+        "type": "enterprise-db",
+        "memory": "8GB",
+    }
+    assert from_json(models.Instance, {**base, **payload}).connection_url is None

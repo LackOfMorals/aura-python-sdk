@@ -51,6 +51,7 @@ class InstanceSummary:
 class Instance:
     """Full details of an instance.
 
+    ``connection_url`` can be ``None`` (the live API sends null for some instances).
     ``storage`` is not returned for AuraDB Free. ``graph_nodes`` and ``graph_relationships`` are
     returned only for Free instances. ``secondaries_count`` is returned only for Virtual
     Dedicated Cloud, and ``cdc_enrichment_mode`` only for Virtual Dedicated Cloud and Business
@@ -62,7 +63,8 @@ class Instance:
     status: InstanceStatus | str
     tenant_id: str
     cloud_provider: CloudProvider | str
-    connection_url: str
+    # Required by the spec, but the live API returns null for some instances.
+    connection_url: str | None = None
     region: str
     type: InstanceType | str
     memory: str

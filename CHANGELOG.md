@@ -26,3 +26,16 @@ the `## vX.Y.Z` section that matches the pushed tag as the GitHub release notes.
   have reached the server.
 - A stdlib Prometheus text-format parser whose output matches the Go SDK, and
   `get_instance_health` with the Go SDK's thresholds.
+
+### Fixed
+
+- `Instance.connection_url` is now optional. The live API returns `null` for some instances,
+  although the spec marks the field as required, and that made `instances.get()` fail.
+
+### Changed
+
+- SDK errors now report their public name (for example `aura_python_sdk.NotFoundError`), and
+  their tracebacks stop at the public method you called instead of listing the SDK's internal
+  frames. Unexpected exceptions still show a full traceback.
+- The live integration tests skip, instead of failing, when the credentials lack permission for
+  an endpoint (HTTP 403).
