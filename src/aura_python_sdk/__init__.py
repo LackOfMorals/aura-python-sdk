@@ -7,11 +7,13 @@ Example::
     with aura.AuraClient(client_id="...", client_secret="...") as client:
         for instance in client.instances.list():
             print(instance.id, instance.name)
+
+For asyncio, use :class:`AsyncAuraClient`, which has the same services with awaitable methods.
 """
 
 import logging
 
-from aura_python_sdk._client import AuraClient
+from aura_python_sdk._client import AsyncAuraClient, AuraClient
 from aura_python_sdk._errors import (
     AuraAPIError,
     AuraConfigurationError,
@@ -30,7 +32,7 @@ from aura_python_sdk._errors import (
     RateLimitError,
     ServerError,
 )
-from aura_python_sdk._transport import HttpRequest, HttpResponse, HttpTransport
+from aura_python_sdk._transport import AsyncHttpTransport, HttpRequest, HttpResponse, HttpTransport
 from aura_python_sdk._version import __version__
 from aura_python_sdk.models import (
     CDCEnrichmentMode,
@@ -71,6 +73,8 @@ from aura_python_sdk.models import (
 logging.getLogger(__name__).addHandler(logging.NullHandler())
 
 __all__ = [
+    "AsyncAuraClient",
+    "AsyncHttpTransport",
     "AuraAPIError",
     "AuraClient",
     "AuraConfigurationError",

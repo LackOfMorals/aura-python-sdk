@@ -227,6 +227,25 @@ parser accepts the spec's `{"errors": [...]}`, the middleware `{"error": "..."}`
   didn't report a metric, and threshold checks skip them. The status logic and messages match Go.
 - **`get_metric_value`** raises `MetricNotFoundError`, which is also a `LookupError`.
 
+### 2.10 Decisions made in phase 8 (async)
+
+- **Written once, run two ways.** Each service operation is a pure function that validates its
+  arguments and returns a `Call` (method, path, params, body, parser, log text). `Service._run`
+  sends it synchronously and `AsyncService._run` awaits it. The retry policy, token parsing,
+  header building and error mapping are shared the same way, and only the I/O loops are
+  duplicated.
+- **Thin async classes.** `AsyncInstanceService` and the other async services repeat only the
+  signatures, and their docstrings point to the sync methods.
+- **Parity is enforced.** `tests/unit/test_async_parity.py` runs every method on both clients
+  against the same responses and asserts identical requests and results. It also checks the
+  signatures match, and fails if a method has no case. Two deliberately broken methods were
+  caught.
+- **Transports can't be mixed up.** `AuraClient` rejects a transport whose `send` is a coroutine,
+  and `AsyncAuraClient` requires one. mypy catches the same mistake statically.
+- **`asyncio.Lock`** guards the token refresh, so concurrent tasks share one token fetch.
+- **Test tooling:** async tests use anyio's pytest plugin, which is already installed with httpx.
+  No new dependency.
+
 ## 3. Package layout
 
 ```
@@ -268,7 +287,7 @@ Dev tooling: `uv`, `ruff` (lint and format), `mypy --strict`, `pytest`, `pytest-
 
 ## 5. Phases
 
-**Status:** phases 1–7 are done. Phase 8 (async) is not started.
+**Status:** all eight phases are done.
 
 1. **Scaffold**: pyproject, uv, ruff, mypy, pytest config, CI workflow, and the import-boundary test.
 2. **Core**: config/options, errors, `HttpTransport` + `HttpxTransport` (retries, size cap),

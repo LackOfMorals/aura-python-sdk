@@ -4,6 +4,7 @@ A Python client for the [Neo4j Aura API](https://neo4j.com/docs/aura/api/overvie
 example, `client.instances.list()` returns your Aura instances. It is modelled on
 [aura-go-sdk](https://github.com/neo4j-contrib/aura-go-sdk) and covers the whole v1 API.
 
+- Sync (`AuraClient`) and asyncio (`AsyncAuraClient`) clients with the same services.
 - Typed throughout (`py.typed`, checked with `mypy --strict`), using frozen dataclass models.
 - One runtime dependency, [httpx](https://www.python-httpx.org/), kept behind the SDK's own
   transport interface.
@@ -19,6 +20,7 @@ You need an Aura API client ID and secret. See
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Timeouts and retries](#timeouts-and-retries)
+- [Async](#async)
 - [Tenants](#tenants)
 - [Instances](#instances)
 - [Snapshots](#snapshots)
@@ -101,6 +103,32 @@ Only network failures are retried, with backoff from 1 s doubling to 5 s. A resp
 status, including 429 and 5xx, is never retried. If a request might already have reached the
 server (a read timeout or a dropped connection), only idempotent methods (`GET`, `PUT`, `DELETE`)
 are retried. That means a `create` or `pause` is never sent twice.
+
+## Async
+
+`AsyncAuraClient` takes the same options, and its services have the same methods, which you
+await. Concurrent calls share one OAuth token.
+
+```python
+import asyncio
+
+import aura_python_sdk as aura
+
+
+async def main() -> None:
+    async with aura.AsyncAuraClient.from_env() as client:
+        summaries = await client.instances.list()
+        instances = await asyncio.gather(*(client.instances.get(s.id) for s in summaries))
+        for instance in instances:
+            print(instance.name, instance.status)
+
+
+asyncio.run(main())
+```
+
+Use `async with` or `await client.aclose()` to release connections. `prometheus.get_metric_value`
+does no I/O, so it is a plain method on both clients. A custom transport for the async client
+implements `AsyncHttpTransport` (`async send()` and `async aclose()`).
 
 ## Tenants
 
@@ -282,7 +310,9 @@ logging.getLogger("aura_python_sdk").setLevel(logging.DEBUG)
 
 ## Custom transports and testing
 
-Pass any object with `send(request) -> HttpResponse` and `close()` as `transport=`. This is the
+Pass any object with `send(request) -> HttpResponse` and `close()` as `transport=`. For
+`AsyncAuraClient`, pass one with `async send()` and `async aclose()`. Each client rejects the
+other kind. This is the
 equivalent of the Go SDK's `WithHTTPClient`. The SDK's retries, auth and error mapping still
 apply on top. A client never closes a transport it didn't create.
 
@@ -313,6 +343,7 @@ decides whether a `POST` is retried.
 | --- | --- |
 | `aura.NewClient(aura.WithCredentials(id, secret), aura.WithTimeout(t))` | `aura.AuraClient(client_id=id, client_secret=secret, timeout=t)` |
 | `defer client.Close()` | `with aura.AuraClient(...) as client:` |
+| goroutines with a shared client | `AsyncAuraClient` with `asyncio.gather` |
 | `client.Instances.List(ctx)` returning `resp.Data` | `client.instances.list()` returns the list |
 | `aura.IsNotFound(err)` | `except aura.NotFoundError:` |
 | `aura.WithHTTPClient(c)` | `transport=` |

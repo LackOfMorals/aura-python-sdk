@@ -1,7 +1,8 @@
-"""The AuraClient entry point (Go: client.go)."""
+"""The AuraClient and AsyncAuraClient entry points (Go: client.go)."""
 
 from __future__ import annotations
 
+import inspect
 import logging
 import os
 from collections.abc import Mapping
@@ -19,12 +20,18 @@ from aura_python_sdk._config import (
     build_config,
 )
 from aura_python_sdk._errors import AuraConfigurationError
-from aura_python_sdk._internal._auth import TokenManager
-from aura_python_sdk._internal._request import RequestService
-from aura_python_sdk._internal.http._httpx import HttpxTransport
-from aura_python_sdk._internal.http._service import HttpService
-from aura_python_sdk._transport import HttpTransport
+from aura_python_sdk._internal._auth import AsyncTokenManager, TokenManager
+from aura_python_sdk._internal._request import AsyncRequestService, RequestService
+from aura_python_sdk._internal.http._httpx import AsyncHttpxTransport, HttpxTransport
+from aura_python_sdk._internal.http._service import AsyncHttpService, HttpService
+from aura_python_sdk._transport import AsyncHttpTransport, HttpTransport
 from aura_python_sdk.services import (
+    AsyncCMEKService,
+    AsyncGDSSessionService,
+    AsyncInstanceService,
+    AsyncPrometheusService,
+    AsyncSnapshotService,
+    AsyncTenantService,
     CMEKService,
     GDSSessionService,
     InstanceService,
@@ -37,6 +44,20 @@ ENV_CLIENT_ID = "AURA_CLIENT_ID"
 ENV_CLIENT_SECRET = "AURA_CLIENT_SECRET"  # noqa: S105 - environment variable name, not a secret
 
 _LOGGER_NAME = "aura_python_sdk"
+
+
+def _resolve_logger(logger: logging.Logger | None) -> logging.Logger:
+    if logger is not None and not isinstance(logger, logging.Logger):
+        raise AuraConfigurationError("logger must be a logging.Logger")
+    return logger or logging.getLogger(_LOGGER_NAME)
+
+
+def _env_credentials() -> tuple[str, str]:
+    client_id = os.environ.get(ENV_CLIENT_ID, "")
+    client_secret = os.environ.get(ENV_CLIENT_SECRET, "")
+    if not client_id or not client_secret:
+        raise AuraConfigurationError(f"{ENV_CLIENT_ID} and {ENV_CLIENT_SECRET} must both be set")
+    return client_id, client_secret
 
 
 class AuraClient:
@@ -98,12 +119,14 @@ class AuraClient:
             user_agent=user_agent,
             default_headers=default_headers,
         )
-        if transport is not None and not isinstance(transport, HttpTransport):
-            raise AuraConfigurationError("transport must implement send() and close()")
-        if logger is not None and not isinstance(logger, logging.Logger):
-            raise AuraConfigurationError("logger must be a logging.Logger")
-
-        self._logger = logger or logging.getLogger(_LOGGER_NAME)
+        if transport is not None and (
+            not isinstance(transport, HttpTransport) or inspect.iscoroutinefunction(transport.send)
+        ):
+            raise AuraConfigurationError(
+                "transport must implement send() and close(); use AsyncAuraClient for an "
+                "async transport"
+            )
+        self._logger = _resolve_logger(logger)
         self._owns_transport = transport is None
         self._transport: HttpTransport = transport or HttpxTransport()
         self._closed = False
@@ -157,12 +180,7 @@ class AuraClient:
 
         Any other keyword option is passed through to :class:`AuraClient`.
         """
-        client_id = os.environ.get(ENV_CLIENT_ID, "")
-        client_secret = os.environ.get(ENV_CLIENT_SECRET, "")
-        if not client_id or not client_secret:
-            raise AuraConfigurationError(
-                f"{ENV_CLIENT_ID} and {ENV_CLIENT_SECRET} must both be set"
-            )
+        client_id, client_secret = _env_credentials()
         return cls(client_id=client_id, client_secret=client_secret, **options)  # type: ignore[arg-type]
 
     @property
@@ -190,3 +208,126 @@ class AuraClient:
 
     def __repr__(self) -> str:
         return f"AuraClient(base_url={self._config.base_url!r})"
+
+
+class AsyncAuraClient:
+    """Async client for the Neo4j Aura API v1, for use with ``asyncio``.
+
+    Takes the same options as :class:`AuraClient`, and its services have the same methods,
+    which are awaited::
+
+        async with AsyncAuraClient(client_id="...", client_secret="...") as client:
+            instances = await client.instances.list()
+
+    ``transport`` must be an :class:`AsyncHttpTransport`. Call :meth:`aclose`, or use
+    ``async with``, to release connections.
+    """
+
+    def __init__(
+        self,
+        *,
+        client_id: str,
+        client_secret: str,
+        base_url: str = DEFAULT_BASE_URL,
+        allow_insecure_base_url: bool = False,
+        timeout: float = DEFAULT_TIMEOUT,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        max_response_size: int = DEFAULT_MAX_RESPONSE_SIZE,
+        user_agent: str = DEFAULT_USER_AGENT,
+        default_headers: Mapping[str, str] | None = None,
+        logger: logging.Logger | None = None,
+        transport: AsyncHttpTransport | None = None,
+    ) -> None:
+        self._config: ClientConfig = build_config(
+            client_id=client_id,
+            client_secret=client_secret,
+            base_url=base_url,
+            allow_insecure_base_url=allow_insecure_base_url,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_response_size=max_response_size,
+            user_agent=user_agent,
+            default_headers=default_headers,
+        )
+        if transport is not None and (
+            not isinstance(transport, AsyncHttpTransport)
+            or not inspect.iscoroutinefunction(transport.send)
+        ):
+            raise AuraConfigurationError(
+                "transport must implement async send() and aclose(); use AuraClient for a "
+                "sync transport"
+            )
+        self._logger = _resolve_logger(logger)
+        self._owns_transport = transport is None
+        self._transport: AsyncHttpTransport = transport or AsyncHttpxTransport()
+        self._closed = False
+
+        http = AsyncHttpService(
+            self._transport,
+            max_retries=self._config.max_retries,
+            max_response_size=self._config.max_response_size,
+            logger=self._logger.getChild("http"),
+        )
+        auth = AsyncTokenManager(
+            client_id=self._config.client_id,
+            client_secret=self._config.client_secret,
+            token_url=f"{self._config.base_url}/oauth/token",
+            user_agent=self._config.user_agent,
+            http=http,
+            logger=self._logger.getChild("auth"),
+        )
+        self._api = AsyncRequestService(
+            http=http,
+            auth=auth,
+            base_url=self._config.base_url,
+            api_version=API_VERSION,
+            user_agent=self._config.user_agent,
+            default_headers=self._config.default_headers,
+            timeout=self._config.timeout,
+            logger=self._logger.getChild("api"),
+        )
+
+        self.tenants = AsyncTenantService(self._api, self._logger.getChild("tenants"))
+        self.instances = AsyncInstanceService(self._api, self._logger.getChild("instances"))
+        self.snapshots = AsyncSnapshotService(self._api, self._logger.getChild("snapshots"))
+        self.cmek = AsyncCMEKService(self._api, self._logger.getChild("cmek"))
+        self.graph_analytics = AsyncGDSSessionService(
+            self._api, self._logger.getChild("graph_analytics")
+        )
+        self.prometheus = AsyncPrometheusService(
+            self._api,
+            self._logger.getChild("prometheus"),
+            allow_untrusted_urls=self._config.allow_insecure_base_url,
+        )
+
+    @classmethod
+    def from_env(cls, **options: object) -> Self:
+        """Build a client with credentials from ``AURA_CLIENT_ID`` and ``AURA_CLIENT_SECRET``."""
+        client_id, client_secret = _env_credentials()
+        return cls(client_id=client_id, client_secret=client_secret, **options)  # type: ignore[arg-type]
+
+    @property
+    def base_url(self) -> str:
+        return self._config.base_url
+
+    async def aclose(self) -> None:
+        """Release pooled connections. Safe to call more than once."""
+        if self._closed:
+            return
+        self._closed = True
+        if self._owns_transport:
+            await self._transport.aclose()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        await self.aclose()
+
+    def __repr__(self) -> str:
+        return f"AsyncAuraClient(base_url={self._config.base_url!r})"

@@ -121,3 +121,10 @@ def test_create_pause_resume_delete(client: aura.AuraClient) -> None:
         _wait_for(client, created.id, aura.InstanceStatus.RUNNING)
     finally:
         client.instances.delete(created.id)
+
+
+@pytest.mark.anyio
+async def test_async_client_reads_the_same_data(client: aura.AuraClient) -> None:
+    async with aura.AsyncAuraClient.from_env(timeout=60) as async_client:
+        async_tenants = await async_client.tenants.list()
+    assert {t.id for t in async_tenants} == {t.id for t in client.tenants.list()}

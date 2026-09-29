@@ -28,16 +28,31 @@ def _tls_context() -> ssl.SSLContext:
     return context
 
 
+def _translate(exc: httpx.TransportError) -> AuraConnectionError:
+    """Map an httpx network error to the SDK's own exception."""
+    request_sent = not isinstance(exc, _NOT_SENT_ERRORS)
+    if isinstance(exc, httpx.TimeoutException):
+        return AuraTimeoutError(f"request timed out: {exc}", request_sent=request_sent)
+    return AuraConnectionError(f"request failed: {exc}", request_sent=request_sent)
+
+
+def _response(response: httpx.Response, body: bytes) -> HttpResponse:
+    return HttpResponse(
+        status_code=response.status_code, headers=dict(response.headers.items()), body=body
+    )
+
+
+def _too_large(limit: int) -> AuraResponseError:
+    return AuraResponseError(f"response body exceeded limit of {limit} bytes")
+
+
 class HttpxTransport:
     """An :class:`~aura_python_sdk.HttpTransport` backed by a pooled ``httpx.Client``."""
 
     def __init__(self, *, _httpx_transport: httpx.BaseTransport | None = None) -> None:
         # _httpx_transport is only for tests; it replaces the network layer below httpx.
         self._client = httpx.Client(
-            verify=_tls_context(),
-            limits=_LIMITS,
-            follow_redirects=True,
-            transport=_httpx_transport,
+            verify=_tls_context(), limits=_LIMITS, follow_redirects=True, transport=_httpx_transport
         )
 
     def send(self, request: HttpRequest) -> HttpResponse:
@@ -49,31 +64,48 @@ class HttpxTransport:
                 content=request.body,
                 timeout=httpx.Timeout(request.timeout),
             ) as response:
-                body = self._read_limited(response, request.max_response_size)
-                return HttpResponse(
-                    status_code=response.status_code,
-                    headers=dict(response.headers.items()),
-                    body=body,
-                )
-        except httpx.TimeoutException as exc:
-            raise AuraTimeoutError(
-                f"request timed out: {exc}", request_sent=not isinstance(exc, _NOT_SENT_ERRORS)
-            ) from exc
+                chunks: list[bytes] = []
+                size = 0
+                for chunk in response.iter_bytes():
+                    size += len(chunk)
+                    if size > request.max_response_size:
+                        raise _too_large(request.max_response_size)
+                    chunks.append(chunk)
+                return _response(response, b"".join(chunks))
         except httpx.TransportError as exc:
-            raise AuraConnectionError(
-                f"request failed: {exc}", request_sent=not isinstance(exc, _NOT_SENT_ERRORS)
-            ) from exc
-
-    @staticmethod
-    def _read_limited(response: httpx.Response, limit: int) -> bytes:
-        chunks: list[bytes] = []
-        size = 0
-        for chunk in response.iter_bytes():
-            size += len(chunk)
-            if size > limit:
-                raise AuraResponseError(f"response body exceeded limit of {limit} bytes")
-            chunks.append(chunk)
-        return b"".join(chunks)
+            raise _translate(exc) from exc
 
     def close(self) -> None:
         self._client.close()
+
+
+class AsyncHttpxTransport:
+    """An :class:`~aura_python_sdk.AsyncHttpTransport` backed by a pooled ``httpx.AsyncClient``."""
+
+    def __init__(self, *, _httpx_transport: httpx.AsyncBaseTransport | None = None) -> None:
+        self._client = httpx.AsyncClient(
+            verify=_tls_context(), limits=_LIMITS, follow_redirects=True, transport=_httpx_transport
+        )
+
+    async def send(self, request: HttpRequest) -> HttpResponse:
+        try:
+            async with self._client.stream(
+                request.method,
+                request.url,
+                headers=dict(request.headers),
+                content=request.body,
+                timeout=httpx.Timeout(request.timeout),
+            ) as response:
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > request.max_response_size:
+                        raise _too_large(request.max_response_size)
+                    chunks.append(chunk)
+                return _response(response, b"".join(chunks))
+        except httpx.TransportError as exc:
+            raise _translate(exc) from exc
+
+    async def aclose(self) -> None:
+        await self._client.aclose()

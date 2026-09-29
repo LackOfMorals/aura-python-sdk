@@ -10,6 +10,8 @@ the `## vX.Y.Z` section that matches the pushed tag as the GitHub release notes.
 
 ### Added
 
+- `AsyncAuraClient` for asyncio. It has the same options and services as `AuraClient`, shares
+  their validation and parsing, and uses an `AsyncHttpTransport` (httpx by default).
 - `AuraClient` for the Aura API v1, with the Go SDK's options as keyword arguments, `from_env()`,
   and context-manager support.
 - Services matching the Go SDK: `tenants`, `instances`, `snapshots`, `cmek`, `graph_analytics` and

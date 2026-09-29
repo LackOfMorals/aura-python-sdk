@@ -1,7 +1,7 @@
 """HttpxTransport against httpx.MockTransport (tests may import httpx; src may not)."""
 
 import ssl
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 import httpx
 import pytest
@@ -132,3 +132,71 @@ def test_tls_minimum_is_1_2() -> None:
     assert context.minimum_version == ssl.TLSVersion.TLSv1_2
     assert context.verify_mode == ssl.CERT_REQUIRED
     transport.close()
+
+
+# --- AsyncHttpxTransport ---
+
+from aura_python_sdk import AsyncHttpTransport  # noqa: E402
+from aura_python_sdk._internal.http._httpx import AsyncHttpxTransport  # noqa: E402
+
+
+def _async_transport(handler: object) -> AsyncHttpxTransport:
+    return AsyncHttpxTransport(_httpx_transport=httpx.MockTransport(handler))  # type: ignore[arg-type]
+
+
+def test_async_satisfies_protocol() -> None:
+    assert isinstance(AsyncHttpxTransport(), AsyncHttpTransport)
+
+
+@pytest.mark.anyio
+async def test_async_request_and_response_are_translated() -> None:
+    seen: list[httpx.Request] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(202, headers={"X-Request-Id": "r1"}, content=b'{"data":{}}')
+
+    transport = _async_transport(handler)
+    response = await transport.send(_request())
+    await transport.aclose()
+
+    [request] = seen
+    assert request.method == "POST"
+    assert request.headers["authorization"] == "Bearer t"
+    assert request.content == b'{"name":"x"}'
+    assert response.status_code == 202
+    assert response.headers["x-request-id"] == "r1"
+    assert response.body == b'{"data":{}}'
+
+
+@pytest.mark.anyio
+async def test_async_body_over_limit_is_rejected() -> None:
+    async def stream() -> AsyncIterator[bytes]:
+        for _ in range(100):
+            yield b"x" * 512
+
+    handler = lambda r: httpx.Response(200, content=stream())  # noqa: E731
+    with pytest.raises(AuraResponseError, match="exceeded limit"):
+        await _async_transport(handler).send(_request(max_response_size=1024))
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("exc", "expected_type", "request_sent"),
+    [
+        (httpx.ConnectError("refused"), AuraConnectionError, False),
+        (httpx.ReadTimeout("slow read"), AuraTimeoutError, True),
+        (httpx.PoolTimeout("pool"), AuraTimeoutError, False),
+        (httpx.RemoteProtocolError("bad"), AuraConnectionError, True),
+    ],
+)
+async def test_async_network_errors_are_translated(
+    exc: Exception, expected_type: type[AuraConnectionError], request_sent: bool
+) -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise exc
+
+    with pytest.raises(expected_type) as info:
+        await _async_transport(handler).send(_request())
+    assert type(info.value) is expected_type
+    assert info.value.request_sent is request_sent

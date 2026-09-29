@@ -86,6 +86,16 @@ class FakeAura:
             **options,
         )
 
+    def async_client(self, **options: Any) -> aura.AsyncAuraClient:
+        options.setdefault("timeout", 5)
+        return aura.AsyncAuraClient(
+            client_id="local-id",
+            client_secret="local-secret",
+            base_url=self.url,
+            allow_insecure_base_url=True,
+            **options,
+        )
+
     def _handler(self) -> type[BaseHTTPRequestHandler]:
         fake = self
 

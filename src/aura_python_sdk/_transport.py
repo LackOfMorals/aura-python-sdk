@@ -55,3 +55,15 @@ class HttpTransport(Protocol):
     def send(self, request: HttpRequest) -> HttpResponse: ...
 
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class AsyncHttpTransport(Protocol):
+    """The async counterpart of :class:`HttpTransport`, for :class:`AsyncAuraClient`.
+
+    ``send`` follows the same error rules as :meth:`HttpTransport.send`.
+    """
+
+    async def send(self, request: HttpRequest) -> HttpResponse: ...
+
+    async def aclose(self) -> None: ...

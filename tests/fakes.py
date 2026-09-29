@@ -73,3 +73,23 @@ class FakeTransport:
     @property
     def api_requests(self) -> list[HttpRequest]:
         return [r for r in self.requests if not r.url.endswith("/oauth/token")]
+
+
+class FakeAsyncTransport(FakeTransport):
+    """The async counterpart of FakeTransport: same queue and recording, awaitable methods."""
+
+    async def send(self, request: HttpRequest) -> HttpResponse:  # type: ignore[override]
+        return FakeTransport.send(self, request)
+
+    async def aclose(self) -> None:
+        self.closed = True
+
+
+@dataclass
+class FakeAsyncSleep:
+    """Advances a FakeClock instead of sleeping."""
+
+    clock: FakeClock
+
+    async def __call__(self, seconds: float) -> None:
+        self.clock.sleep(seconds)
